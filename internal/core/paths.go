@@ -52,12 +52,18 @@ func resolveRoot(dir string) (string, error) {
 	if isDir(filepath.Join(clean, "DeltaForce", "PackContent", "Paks")) {
 		return filepath.Join(clean, "DeltaForce"), nil
 	}
-	// 3. <dir>\Paks 且 <dir> 的父目录名为 PackContent
+	// 3. <dir> 自己就是 PackContent 目录（<dir>\Paks 存在）
 	if isDir(filepath.Join(clean, "Paks")) &&
+		strings.EqualFold(filepath.Base(clean), "PackContent") {
+		return filepath.Clean(filepath.Join(clean, "..")), nil
+	}
+	// 4. <dir> 自己就是 Paks 目录（且其父目录名为 PackContent）
+	if isDir(clean) &&
+		strings.EqualFold(filepath.Base(clean), "Paks") &&
 		strings.EqualFold(filepath.Base(filepath.Dir(clean)), "PackContent") {
 		return filepath.Clean(filepath.Join(clean, "..", "..")), nil
 	}
-	return "", fmt.Errorf("该文件夹里没有找到 PackContent\\Paks，请选择包含 PackContent 的 DeltaForce 文件夹")
+	return "", fmt.Errorf("该文件夹里没有找到 PackContent\\Paks。请选择 DeltaForce 游戏文件夹（例如 DeltaForce(2001918) 或它里面的 DeltaForce），也可以直接选 PackContent 或 Paks 目录")
 }
 
 // NewGameInfo 依据游戏根目录与备份夹名称构造 GameInfo。

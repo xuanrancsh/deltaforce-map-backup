@@ -25,6 +25,12 @@ var (
 	chineseFont fyne.Resource
 )
 
+// chineseFontPath 记录实际载入的中文字体文件路径；未载入时为空串。
+var chineseFontPath string
+
+// ChineseFontPath 返回实际载入的中文字体文件路径；未载入时为空串。
+func ChineseFontPath() string { return chineseFontPath }
+
 // installChineseFont 尝试加载系统中文字体。
 // 可用环境变量 DFMAP_FONT 指定字体文件路径（优先于内置候选）。
 // 失败时不 panic，仅使 chineseFont 保持为 nil。
@@ -45,6 +51,7 @@ func installChineseFont() {
 				continue
 			}
 			chineseFont = fyne.NewStaticResource("zh.ttf", data)
+			chineseFontPath = p
 			return
 		}
 	})
@@ -68,19 +75,16 @@ func validChineseFont(data []byte) bool {
 // zhTheme 是基于默认主题、仅替换字体的自定义主题。
 type zhTheme struct {
 	fyne.Theme
-	base fyne.Theme
 	font fyne.Resource
 }
 
-// Font 返回中文字体资源；等宽场景与字体为空时回退到基础主题。
+// Font 始终返回中文字体资源；字体为空时回退到基础主题。
+// 注意：即使用户要求等宽场景，也返回中文字体——默认等宽字体不含 CJK 字形，会渲染成方块。
 func (t *zhTheme) Font(s fyne.TextStyle) fyne.Resource {
-	if s.Monospace { // 等宽场景（日志、代码）保持默认主题，避免间距错乱
-		return t.base.Font(s)
-	}
 	if t.font != nil {
 		return t.font
 	}
-	return t.base.Font(s)
+	return t.Theme.Font(s)
 }
 
 // applyChineseTheme 应用自定义中文主题；没有可用字体时返回 false。
@@ -88,7 +92,6 @@ func applyChineseTheme(a fyne.App) bool {
 	if chineseFont == nil {
 		return false
 	}
-	base := theme.DefaultTheme()
-	a.Settings().SetTheme(&zhTheme{Theme: base, base: base, font: chineseFont})
+	a.Settings().SetTheme(&zhTheme{Theme: theme.DefaultTheme(), font: chineseFont})
 	return true
 }

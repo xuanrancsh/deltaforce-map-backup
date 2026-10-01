@@ -23,8 +23,10 @@ func main() {
 	installChineseFont()
 
 	a := app.NewWithID("com.deltamapbackup.app")
-	if !applyChineseTheme(a) {
-		core.Logf("未找到中文字体，界面中文可能显示异常")
+	if applyChineseTheme(a) {
+		core.Logf("已载入中文字体：" + ChineseFontPath())
+	} else {
+		core.Logf("未找到中文字体，界面中文可能显示为方块（可用环境变量 DFMAP_FONT 指定字体文件）")
 	}
 	a.SetIcon(fyne.NewStaticResource("icon.png", iconPNG))
 

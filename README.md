@@ -47,7 +47,7 @@
 
 ### 备份步骤
 
-1. 确认顶部路径正确（不对就点「手动指定…」选择 DeltaForce 文件夹）。
+1. 确认顶部路径正确（不对就点「手动指定…」选 DeltaForce 游戏文件夹，或直接选 `PackContent` / `Paks` 目录，程序会自动识别）。
 2. 点左边「开始备份」。
 3. 在确认框里点「确定」。
 4. 完成后，底部会显示「已移动：…」。
@@ -73,7 +73,7 @@ E:\WeGameApps\rail_apps\DeltaForce(2001918)\DeltaForce\PackContent\Paks\MapBacku
 ## 常见问题
 
 **Q：提示「未找到游戏目录」怎么办？**
-A：点「手动指定…」，选择**包含 `PackContent` 的那一级 DeltaForce 文件夹**（例如 `…\DeltaForce(2001918)\DeltaForce`），或者选择该文件夹的上一层，程序会自动识别。
+A：点「手动指定…」，选中 DeltaForce 游戏文件夹（例如 `DeltaForce(2001918)` 或它里面的 `DeltaForce`），也可以直接选 `PackContent` 或 `Paks` 目录，程序都会自动识别归一化。
 
 **Q：杀毒软件 / 安全软件误报怎么办？**
 A：这是自研的绿色小工具，没有恶意代码。若被拦截，请把该 exe 加入杀软白名单 / 信任列表后再运行。

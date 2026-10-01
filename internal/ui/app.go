@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"deltamapbackup/internal/core"
@@ -26,7 +27,8 @@ type App struct {
 
 	pathEntry   *widget.Entry
 	statusLabel *widget.Label
-	logEntry    *widget.Entry
+	logRich     *widget.RichText
+	logScroll   *container.Scroll
 
 	findBtn    *widget.Button
 	manualBtn  *widget.Button
@@ -51,7 +53,7 @@ func Run(a fyne.App) {
 func newApp(a fyne.App) *App {
 	u := &App{fyneApp: a}
 	u.win = a.NewWindow("三角洲地图文件备份与恢复")
-	u.win.Resize(fyne.NewSize(980, 620))
+	u.win.Resize(fyne.NewSize(1040, 740))
 	u.win.CenterOnScreen()
 	u.buildUI()
 	u.startup()
@@ -83,14 +85,20 @@ func (u *App) buildUI() {
 	split := container.NewHSplit(leftCard, rightCard)
 	split.SetOffset(0.5)
 
-	// ── 底部：操作记录 ──────────────────────────────────────────────────────
-	u.logEntry = widget.NewEntry()
-	u.logEntry.MultiLine = true
-	u.logEntry.Disable()
-	logScroll := container.NewVScroll(u.logEntry)
-	bottom := container.NewBorder(widget.NewLabel("操作记录"), nil, nil, nil, logScroll)
+	// ── 底部：操作记录（改用 RichText，保证文字清晰、可选中、可自动滚到底）──────
+	u.logRich = widget.NewRichText()
+	u.logRich.Wrapping = fyne.TextWrapWord
+	u.logScroll = container.NewVScroll(u.logRich)
+	u.logScroll.SetMinSize(fyne.NewSize(0, 170))
 
-	u.win.SetContent(container.NewBorder(top, bottom, nil, nil, split))
+	logTitle := widget.NewLabel("操作记录（最新的在最下面；中间的分隔条可以上下拖动来放大本区域）")
+	logBox := container.NewBorder(logTitle, nil, nil, nil, u.logScroll)
+
+	// 主区与日志区之间用可拖动的分隔条，用户可以自己决定日志区多大。
+	body := container.NewVSplit(split, logBox)
+	body.SetOffset(0.72)
+
+	u.win.SetContent(container.NewBorder(top, nil, nil, nil, body))
 }
 
 // buildBackupCard 构建左侧「备份」卡片。
@@ -179,7 +187,7 @@ func (u *App) onFind() {
 
 // onManual 处理「手动指定」按钮。
 func (u *App) onManual() {
-	u.appendLog("请在弹出的窗口中选中包含 PackContent 的 DeltaForce 文件夹（例如 DeltaForce(2001918)\\DeltaForce）")
+	u.appendLog("请在弹出的窗口中选中 DeltaForce 游戏文件夹（例如 DeltaForce(2001918) 或它里面的 DeltaForce），也可以直接选 PackContent 或 Paks 目录")
 	d := dialog.NewFolderOpen(func(lu fyne.ListableURI, err error) {
 		if err != nil {
 			dialog.ShowError(err, u.win)
@@ -436,7 +444,30 @@ func (u *App) appendLog(line string) {
 	if len(u.logLines) > maxLogLines {
 		u.logLines = u.logLines[len(u.logLines)-maxLogLines:]
 	}
-	u.logEntry.SetText(strings.Join(u.logLines, "\n"))
+	u.refreshLog()
+}
+
+// refreshLog 用最新的 logLines 重建日志区内容，并自动滚动到最底部。
+func (u *App) refreshLog() {
+	if u.logRich == nil {
+		return
+	}
+	segs := make([]widget.RichTextSegment, 0, len(u.logLines))
+	for _, l := range u.logLines {
+		segs = append(segs, &widget.TextSegment{
+			Text: l,
+			Style: widget.RichTextStyle{
+				Inline:    false,
+				SizeName:  theme.SizeNameText,
+				ColorName: theme.ColorNameForeground,
+			},
+		})
+	}
+	u.logRich.Segments = segs
+	u.logRich.Refresh()
+	if u.logScroll != nil {
+		u.logScroll.ScrollToBottom()
+	}
 }
 
 // countPresent 统计某目录下存在的目标文件数量。

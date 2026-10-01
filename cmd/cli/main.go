@@ -39,10 +39,7 @@ func main() {
 func realMain() int {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		emit(cliOutput{
-			OK:      false,
-			Message: "缺少命令参数，请使用 find / status / backup / restore 之一",
-		})
+		emitFail("", "缺少命令参数，请使用 find / status / backup / restore 之一")
 		return 1
 	}
 
@@ -64,7 +61,7 @@ func realMain() int {
 	fs.BoolVar(&jsonFlag, "json", false, "以 JSON 输出（默认即为 JSON）")
 
 	if err := fs.Parse(args[1:]); err != nil {
-		emit(cliOutput{OK: false, Command: cmd, Message: "参数解析失败：" + err.Error()})
+		emitFail(cmd, "参数解析失败："+err.Error())
 		return 1
 	}
 
@@ -97,7 +94,7 @@ func realMain() int {
 	case "restore":
 		return doRestore(pathFlag, pol, dryRun)
 	default:
-		emit(cliOutput{OK: false, Command: cmd, Message: "未知命令：" + cmd})
+		emitFail(cmd, "未知命令："+cmd)
 		return 1
 	}
 }
@@ -106,7 +103,7 @@ func realMain() int {
 func doFind() int {
 	root, source, err := core.AutoFind()
 	if err != nil {
-		emit(cliOutput{OK: false, Command: "find", Message: "自动查找失败：" + err.Error()})
+		emitFail("find", "自动查找失败："+err.Error())
 		return 1
 	}
 
@@ -116,7 +113,7 @@ func doFind() int {
 	}
 	gi, nerr := core.NormalizeDirWithBackup(root, cfg.BackupDirName)
 	if nerr != nil {
-		emit(cliOutput{OK: false, Command: "find", Message: "自动查找结果校验失败：" + nerr.Error()})
+		emitFail("find", "自动查找结果校验失败："+nerr.Error())
 		return 1
 	}
 	cfg.GamePath = gi.Root
@@ -142,7 +139,7 @@ func doFind() int {
 func doStatus(pathFlag string) int {
 	gi, err := resolveGame(pathFlag)
 	if err != nil {
-		emit(cliOutput{OK: false, Command: "status", Message: err.Error()})
+		emitFail("status", err.Error())
 		return 1
 	}
 	inPaks := listPresent(gi.Paks)
@@ -164,7 +161,7 @@ func doStatus(pathFlag string) int {
 func doBackup(pathFlag string, pol core.ConflictPolicy, dryRun bool) int {
 	gi, err := resolveGame(pathFlag)
 	if err != nil {
-		emit(cliOutput{OK: false, Command: "backup", Message: err.Error()})
+		emitFail("backup", err.Error())
 		return 1
 	}
 	if dryRun {
@@ -190,7 +187,7 @@ func doBackup(pathFlag string, pol core.ConflictPolicy, dryRun bool) int {
 func doRestore(pathFlag string, pol core.ConflictPolicy, dryRun bool) int {
 	gi, err := resolveGame(pathFlag)
 	if err != nil {
-		emit(cliOutput{OK: false, Command: "restore", Message: err.Error()})
+		emitFail("restore", err.Error())
 		return 1
 	}
 	if dryRun {
@@ -361,4 +358,9 @@ func emit(out cliOutput) {
 		return
 	}
 	fmt.Fprintln(os.Stdout, string(data))
+}
+
+// emitFail 输出一条顶层失败结果：message 与 errors 保持一致。
+func emitFail(cmd, msg string) {
+	emit(cliOutput{OK: false, Command: cmd, Errors: []string{msg}, Message: msg})
 }
