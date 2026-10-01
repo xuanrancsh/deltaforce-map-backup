@@ -35,6 +35,10 @@ type App struct {
 
 	logLines []string
 	gi       core.GameInfo
+
+	// 本次运行内是否已由用户在冲突弹窗中勾选「一直这样做」，以及采用的策略。
+	conflictResolved bool
+	conflictPolicy   core.ConflictPolicy
 }
 
 // Run 创建并显示主窗口。
@@ -175,6 +179,7 @@ func (u *App) onFind() {
 
 // onManual 处理「手动指定」按钮。
 func (u *App) onManual() {
+	u.appendLog("请在弹出的窗口中选中包含 PackContent 的 DeltaForce 文件夹（例如 DeltaForce(2001918)\\DeltaForce）")
 	d := dialog.NewFolderOpen(func(lu fyne.ListableURI, err error) {
 		if err != nil {
 			dialog.ShowError(err, u.win)
@@ -197,7 +202,6 @@ func (u *App) onManual() {
 		u.refreshStatus()
 		u.appendLog("手动指定游戏目录：" + gi2.Root)
 	}, u.win)
-	d.SetTitle("请选择 DeltaForce 文件夹（包含 PackContent 的那一级）")
 	d.Resize(fyne.NewSize(800, 560))
 	d.Show()
 }
@@ -239,9 +243,18 @@ func (u *App) onBackup() {
 		return
 	}
 	dialog.ShowConfirm("确认备份", u.buildConfirmMessage("backup"), func(ok bool) {
-		if ok {
-			u.runOp("backup")
+		if !ok {
+			return
 		}
+		if names := u.conflictNames("backup"); len(names) > 0 {
+			if u.conflictResolved {
+				u.runOp("backup", u.conflictPolicy)
+				return
+			}
+			u.askConflict("backup")
+			return
+		}
+		u.runOp("backup", core.ConflictSkip)
 	}, u.win)
 }
 
@@ -252,9 +265,18 @@ func (u *App) onRestore() {
 		return
 	}
 	dialog.ShowConfirm("确认恢复", u.buildConfirmMessage("restore"), func(ok bool) {
-		if ok {
-			u.runOp("restore")
+		if !ok {
+			return
 		}
+		if names := u.conflictNames("restore"); len(names) > 0 {
+			if u.conflictResolved {
+				u.runOp("restore", u.conflictPolicy)
+				return
+			}
+			u.askConflict("restore")
+			return
+		}
+		u.runOp("restore", core.ConflictSkip)
 	}, u.win)
 }
 
@@ -280,19 +302,18 @@ func (u *App) buildConfirmMessage(action string) string {
 }
 
 // runOp 在后台执行备份 / 恢复，完成后回主线程刷新界面。
-func (u *App) runOp(action string) {
+func (u *App) runOp(action string, pol core.ConflictPolicy) {
 	u.setBusy(true)
 	u.appendLog("开始" + opName(action) + "…")
 
 	gi := u.gi
-	ask := u.makeConflictFn()
 	go func() {
 		var res core.Result
 		var err error
 		if action == "restore" {
-			res, err = core.Restore(gi, core.ConflictAsk, ask)
+			res, err = core.Restore(gi, pol, nil)
 		} else {
-			res, err = core.Backup(gi, core.ConflictAsk, ask)
+			res, err = core.Backup(gi, pol, nil)
 		}
 		fyne.Do(func() {
 			u.setBusy(false)
@@ -302,34 +323,52 @@ func (u *App) runOp(action string) {
 	}()
 }
 
-// makeConflictFn 返回一个在主线程弹冲突对话框、并等待用户选择的回调。
-func (u *App) makeConflictFn() core.ConflictFn {
-	return func(fileName string) (core.ConflictPolicy, bool) {
-		type answer struct {
-			policy core.ConflictPolicy
-			all    bool
-		}
-		ch := make(chan answer, 1)
-		fyne.Do(func() {
-			chk := widget.NewCheck("本次运行内遇到冲突都这样做", func(bool) {})
-			content := container.NewVBox(
-				widget.NewLabel("目标位置已存在同名文件："),
-				widget.NewLabel("• "+fileName),
-				widget.NewLabel("请选择「覆盖」或「跳过」。"),
-				chk,
-			)
-			d := dialog.NewCustomConfirm("发现同名文件", "覆盖", "跳过", content, func(overwrite bool) {
-				pol := core.ConflictSkip
-				if overwrite {
-					pol = core.ConflictOverwrite
-				}
-				ch <- answer{policy: pol, all: chk.Checked}
-			}, u.win)
-			d.Show()
-		})
-		a := <-ch
-		return a.policy, a.all
+// conflictNames 返回本次操作中「源文件存在且目标位置已存在同名文件」的文件名列表（纯扫描，不弹窗）。
+func (u *App) conflictNames(action string) []string {
+	srcDir, dstDir := u.gi.Paks, u.gi.Backup
+	if action == "restore" {
+		srcDir, dstDir = u.gi.Backup, u.gi.Paks
 	}
+	var names []string
+	for _, name := range core.TargetFiles {
+		if _, err := os.Stat(filepath.Join(srcDir, name)); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dstDir, name)); err == nil {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// askConflict 弹一次冲突确认框，用户选完后直接开跑，不做任何阻塞等待。
+func (u *App) askConflict(action string) {
+	dstDir := u.gi.Backup
+	if action == "restore" {
+		dstDir = u.gi.Paks
+	}
+	lines := []string{"目标位置已存在下面的同名文件：", ""}
+	for _, n := range u.conflictNames(action) {
+		lines = append(lines, "• "+filepath.Join(dstDir, n))
+	}
+	lines = append(lines, "", "请选择「覆盖」或「跳过」。")
+
+	label := widget.NewLabel(strings.Join(lines, "\n"))
+	label.Wrapping = fyne.TextWrapWord
+	chk := widget.NewCheck("本次运行内遇到冲突都这样做", func(bool) {})
+	box := container.NewVBox(label, chk)
+
+	dialog.NewCustomConfirm("发现同名文件", "覆盖", "跳过", box, func(overwrite bool) {
+		pol := core.ConflictSkip
+		if overwrite {
+			pol = core.ConflictOverwrite
+		}
+		if chk.Checked {
+			u.conflictResolved = true
+			u.conflictPolicy = pol
+		}
+		u.runOp(action, pol)
+	}, u.win).Show()
 }
 
 // reportResult 把操作结果逐条写入操作记录区。

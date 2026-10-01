@@ -72,8 +72,11 @@ type zhTheme struct {
 	font fyne.Resource
 }
 
-// Font 返回中文字体资源；字体为空时回退到基础主题。
+// Font 返回中文字体资源；等宽场景与字体为空时回退到基础主题。
 func (t *zhTheme) Font(s fyne.TextStyle) fyne.Resource {
+	if s.Monospace { // 等宽场景（日志、代码）保持默认主题，避免间距错乱
+		return t.base.Font(s)
+	}
 	if t.font != nil {
 		return t.font
 	}

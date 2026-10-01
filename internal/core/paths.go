@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -130,14 +131,42 @@ func findDeltaForceIn(parent string) string {
 	return ""
 }
 
-// findFromScan 扫描所有盘符下的常见目录。总耗时上限 20 秒。
+// localFixedDrives 返回本机所有「本地固定磁盘」根路径（例如 C:\）。
+// 避免探测软驱 / 光驱 / 已断开的网络驱动器导致长时间阻塞。
+func localFixedDrives() []string {
+	mask, err := windows.GetLogicalDrives()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for i := 0; i < 26; i++ {
+		if mask&(uint32(1)<<uint(i)) == 0 {
+			continue
+		}
+		root := string(rune('A'+i)) + ":\\"
+		if windows.GetDriveType(windows.StringToUTF16Ptr(root)) == windows.DRIVE_FIXED {
+			out = append(out, root)
+		}
+	}
+	return out
+}
+
+// findFromScan 扫描本地固定磁盘下的常见目录。总耗时上限 20 秒。
 func findFromScan() string {
 	deadline := time.Now().Add(20 * time.Second)
-	for c := 'A'; c <= 'Z'; c++ {
+
+	drives := localFixedDrives()
+	if len(drives) == 0 {
+		// 极端兜底：枚举失败时退回原来的 A–Z 探测。
+		for c := 'A'; c <= 'Z'; c++ {
+			drives = append(drives, string(c)+":\\")
+		}
+	}
+
+	for _, drive := range drives {
 		if time.Now().After(deadline) {
 			return ""
 		}
-		drive := string(c) + ":\\"
 		if !isDir(drive) {
 			continue
 		}

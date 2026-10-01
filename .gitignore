@@ -4,3 +4,6 @@ dist/
 config.json
 *.log
 .DS_Store
+
+# WorkBuddy 项目记忆（含本机路径信息，不进公开仓库）
+.workbuddy/
