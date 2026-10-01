@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 // ConflictPolicy 表示遇到同名文件时的处理策略。
@@ -78,30 +80,9 @@ func (c *conflictState) decide(name string) ConflictPolicy {
 	}
 }
 
-// ensureGameNotRunning 在操作前检查游戏 / 反作弊进程；命中则写入错误并返回 error。
-func ensureGameNotRunning(res *Result) error {
-	ok, procs, err := GameRunning()
-	if err != nil {
-		// 枚举失败不阻断操作，仅记录警告。
-		Logf("警告：无法枚举进程，跳过游戏运行检测：%v", err)
-		return nil
-	}
-	if ok {
-		msg := fmt.Sprintf("检测到游戏或反作弊正在运行（%s），请先完全退出游戏和 WeGame 再操作。",
-			strings.Join(procs, "、"))
-		res.OK = false
-		res.Errors = append(res.Errors, msg)
-		return errors.New(msg)
-	}
-	return nil
-}
-
 // Backup 把目标文件从 Paks 目录「剪切」到备份文件夹。
 func Backup(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 	res := NewResult("backup")
-	if err := ensureGameNotRunning(&res); err != nil {
-		return res, err
-	}
 	if gi.Paks == "" {
 		msg := "尚未确定游戏目录，无法备份。"
 		res.OK = false
@@ -140,7 +121,7 @@ func Backup(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 		n, err := moveFile(src, dst)
 		if err != nil {
 			res.OK = false
-			res.Errors = append(res.Errors, "备份 "+name+" 失败："+err.Error())
+			res.Errors = append(res.Errors, moveErrText("备份", name, err))
 			continue
 		}
 		res.Moved = append(res.Moved, name)
@@ -153,9 +134,6 @@ func Backup(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 // Restore 把目标文件从备份文件夹「剪切」回 Paks 目录。
 func Restore(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 	res := NewResult("restore")
-	if err := ensureGameNotRunning(&res); err != nil {
-		return res, err
-	}
 	if gi.Backup == "" || gi.Paks == "" {
 		msg := "尚未确定游戏目录，无法恢复。"
 		res.OK = false
@@ -209,7 +187,7 @@ func Restore(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 		n, err := moveFile(src, dst)
 		if err != nil {
 			res.OK = false
-			res.Errors = append(res.Errors, "恢复 "+name+" 失败："+err.Error())
+			res.Errors = append(res.Errors, moveErrText("恢复", name, err))
 			continue
 		}
 		res.Moved = append(res.Moved, name)
@@ -319,4 +297,35 @@ func isCrossDevice(err error) bool {
 		}
 	}
 	return false
+}
+
+// isFileBusy 判断错误是否为「文件正被其它程序占用」（共享冲突 / 锁定冲突）。
+func isFileBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		return true
+	}
+	// 兜底：不同语言的系统错误文案差异较大，按关键字再判一次。
+	s := strings.ToLower(err.Error())
+	for _, k := range []string{
+		"being used by another process",
+		"另一个程序正在使用",
+		"正由另一进程使用",
+		"被另一个进程使用",
+	} {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// moveErrText 生成移动失败时给用户看的中文说明。
+func moveErrText(action, name string, err error) string {
+	if isFileBusy(err) {
+		return action + " " + name + " 失败：该文件正被其它程序占用，请关闭正在使用它的程序（例如游戏或 WeGame）后重试。"
+	}
+	return action + " " + name + " 失败：" + err.Error()
 }

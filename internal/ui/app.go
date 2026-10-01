@@ -294,7 +294,7 @@ func (u *App) buildConfirmMessage(action string) string {
 		b.WriteString(fmt.Sprintf("• %s（%s）\n", name, humanSize(filepath.Join(dir, name))))
 	}
 	if action == "restore" {
-		b.WriteString("\n恢复后游戏内对应地图即可正常加载。\n\n请确保游戏和 WeGame 已完全退出。\n\n确认继续吗？")
+		b.WriteString("\n恢复后游戏内对应地图即可正常加载。\n\n确认继续吗？")
 	} else {
 		b.WriteString("\n注意：剪切后游戏内对应地图将无法加载，需要点「恢复」才能还原。\n\n确认继续吗？")
 	}
