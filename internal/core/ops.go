@@ -1,9 +1,16 @@
+// 本包对游戏文件只做两类操作：
+//  1. os.Stat —— 读取文件大小等元数据，不打开文件内容；
+//  2. os.Rename —— 在同一块磁盘内把文件从一个文件夹移动到另一个文件夹（即「剪切」）。
+//
+// 全程不会读取、写入或修改游戏文件的内容，也不会删除任何游戏文件。
+// 因此目标文件的文件名、大小与哈希值在剪切前后完全一致。
+// 唯一会写入磁盘的是配置文件与日志，它们位于 %APPDATA%\DeltaForceMapBackup\，
+// 与游戏目录无关。
 package core
 
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,8 +204,10 @@ func Restore(gi GameInfo, pol ConflictPolicy, ask ConflictFn) (Result, error) {
 	return res, nil
 }
 
-// moveFile 优先用 os.Rename 搬移文件；跨卷时退化为「复制 → 校验 → 删除源」。
-// 返回搬移的字节数。
+// moveFile 只做同一块磁盘内的「剪切」：调用 os.Rename 把文件从 src 移到 dst。
+// 该调用不读取、不写入、不修改文件内容，目标文件名与源文件名完全相同，
+// 因此文件大小与哈希值在剪切前后必然一致；同盘改名是原子操作，
+// 十几 GB 的文件也是瞬间完成，不产生额外磁盘占用。
 func moveFile(src, dst string) (int64, error) {
 	si, err := os.Stat(src)
 	if err != nil {
@@ -206,74 +215,21 @@ func moveFile(src, dst string) (int64, error) {
 	}
 	size := si.Size()
 
-	if err := os.Rename(src, dst); err == nil {
-		di, verr := os.Stat(dst)
-		if verr != nil {
-			return 0, verr
+	if err := os.Rename(src, dst); err != nil {
+		if isCrossDevice(err) {
+			return 0, fmt.Errorf("源文件与备份文件不在同一块磁盘，无法剪切（本工具的备份文件夹固定在 Paks 目录内，正常情况下不会出现此错误）")
 		}
-		if di.Size() != size {
-			return 0, fmt.Errorf("移动后大小不一致（源 %d，目标 %d）", size, di.Size())
-		}
-		return size, nil
-	} else if !isCrossDevice(err) {
 		return 0, err
 	}
 
-	return copyThenDelete(src, dst, size)
-}
-
-// copyThenDelete 用于跨卷场景：复制到临时文件 → 校验大小 → 替换目标 → 删除源。
-func copyThenDelete(src, dst string, size int64) (int64, error) {
-	tmp := dst + ".tmp"
-	if err := copyFile(src, tmp); err != nil {
-		_ = os.Remove(tmp)
-		return 0, err
+	di, verr := os.Stat(dst)
+	if verr != nil {
+		return 0, verr
 	}
-
-	ti, err := os.Stat(tmp)
-	if err != nil {
-		_ = os.Remove(tmp)
-		return 0, err
-	}
-	if ti.Size() != size {
-		_ = os.Remove(tmp)
-		return 0, fmt.Errorf("复制后大小不一致（源 %d，目标 %d）", size, ti.Size())
-	}
-
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		return 0, err
-	}
-	if err := os.Remove(src); err != nil {
-		return 0, err
+	if di.Size() != size {
+		return 0, fmt.Errorf("移动后大小不一致（源 %d，目标 %d）", size, di.Size())
 	}
 	return size, nil
-}
-
-// copyFile 把 src 完整复制到 dst。
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-
-	_, copyErr := io.Copy(out, in)
-	syncErr := out.Sync()
-	closeErr := out.Close()
-
-	if copyErr != nil {
-		return copyErr
-	}
-	if syncErr != nil {
-		return syncErr
-	}
-	return closeErr
 }
 
 // isCrossDevice 判断错误是否为跨卷（不同磁盘）错误。
