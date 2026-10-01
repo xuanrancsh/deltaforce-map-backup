@@ -24,7 +24,7 @@ func main() {
 
 	a := app.NewWithID("com.deltamapbackup.app")
 	if applyChineseTheme(a) {
-		core.Logf("已载入中文字体：" + ChineseFontPath())
+		core.Logf("已载入中文字体：%s", ChineseFontPath())
 	} else {
 		core.Logf("未找到中文字体，界面中文可能显示为方块（可用环境变量 DFMAP_FONT 指定字体文件）")
 	}

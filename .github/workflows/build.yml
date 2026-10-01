@@ -58,8 +58,10 @@ jobs:
       - name: Resolve dependencies
         shell: pwsh
         run: |
-          go get fyne.io/fyne/v2@v2.6.0 golang.org/x/image@latest golang.org/x/sys@latest
-          go mod tidy
+          # go.mod / go.sum 已随仓库提交，按锁定版本下载即可。
+          # 不再使用 go get @latest / go mod tidy —— 那样会漂移到更新的依赖版本
+          # （例如 golang.org/x/image v0.46 要求 go >= 1.26），导致构建不可复现。
+          go mod download
 
       - name: go vet
         shell: pwsh

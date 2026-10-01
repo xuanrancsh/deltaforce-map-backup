@@ -40,3 +40,9 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// 使用项目内的 GLFW 副本（third_party/glfw）。
+// 该副本相对上游只改了一处：跳过 DirectInput8 手柄枚举，避免在有大量虚拟 HID
+// 输入设备的机器上启动时阻塞数十秒。详见 third_party/glfw/glfw/src/win32_joystick.c
+// 中的 [DFMAP PATCH] 注释。
+replace github.com/go-gl/glfw/v3.3/glfw => ./third_party/glfw
