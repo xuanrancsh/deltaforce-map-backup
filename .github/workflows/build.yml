@@ -1,0 +1,98 @@
+name: build
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CGO_ENABLED: "1"
+  GOFLAGS: "-mod=mod"
+  GOPROXY: "https://proxy.golang.org,direct"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - name: Ensure gcc (mingw)
+        shell: pwsh
+        run: |
+          if (Get-Command gcc -ErrorAction SilentlyContinue) {
+            gcc --version
+            exit 0
+          }
+          $dirs = @(
+            "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin",
+            "C:\mingw64\bin",
+            "C:\msys64\mingw64\bin",
+            "C:\Strawberry\c\bin"
+          )
+          foreach ($d in $dirs) {
+            if (Test-Path $d) {
+              Add-Content -Path $env:GITHUB_PATH -Value $d
+            }
+          }
+          $env:Path = $env:Path + ";" + ($dirs -join ";")
+          if (Get-Command gcc -ErrorAction SilentlyContinue) {
+            gcc --version
+          } else {
+            choco install mingw -y --no-progress
+            Add-Content -Path $env:GITHUB_PATH -Value "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          }
+
+      - name: Resolve dependencies
+        shell: pwsh
+        run: |
+          go get fyne.io/fyne/v2@v2.6.0 golang.org/x/image@latest golang.org/x/sys@latest
+          go mod tidy
+
+      - name: go vet
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { Write-Warning "go vet reported issues (ignored)" }
+
+      - name: Generate Windows resources (icon + manifest)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          go run github.com/akavel/rsrc@latest -arch amd64 -ico assets/icon.ico -manifest assets/app.manifest -o rsrc_windows_amd64.syso
+
+      - name: Build GUI (DeltaForceMapBackup.exe)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/DeltaForceMapBackup.exe .
+
+      - name: Build CLI (dfmap-cli.exe)
+        shell: pwsh
+        run: |
+          go build -trimpath -ldflags "-s -w" -o dist/dfmap-cli.exe ./cmd/cli
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaForceMapBackup-windows-amd64
+          path: dist/*
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

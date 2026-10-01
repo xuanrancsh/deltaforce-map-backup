@@ -1,0 +1,6 @@
+dist/
+*.exe
+*.syso
+config.json
+*.log
+.DS_Store
